@@ -1,0 +1,21 @@
+[package]
+name = "manufactory"
+version = "0.1.0"
+edition = "2021"
+
+[profile.dev]
+debug = true
+overflow-checks = true
+opt-level = 0
+debug-assertions = true
+
+[profile.release]
+opt-level = "z"
+strip = true
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+debug = false
+
+[dependencies]
+bevy = "0.15.0"
