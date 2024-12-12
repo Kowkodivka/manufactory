@@ -1,18 +1,7 @@
-use bevy::{asset::LoadedFolder, image::ImageSampler, prelude::*};
+use bevy::{image::ImageSampler, prelude::*};
+use plugins::atlas::{AtlasLoadingState, AtlasOptions, TextureAtlasPlugin, TextureAtlases};
 
 mod plugins;
-
-const SPRITES_FOLDER_PATH: &str = "sprites/ui";
-
-#[derive(Resource, Default)]
-struct SpriteFolder(Handle<LoadedFolder>);
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, States)]
-enum AppState {
-    #[default]
-    Setup,
-    Finished,
-}
 
 #[derive(Component)]
 struct Cursor;
@@ -20,113 +9,47 @@ struct Cursor;
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
-        .init_state::<AppState>()
-        .add_systems(OnEnter(AppState::Setup), load_textures)
-        .add_systems(Update, check_textures.run_if(in_state(AppState::Setup)))
-        .add_systems(OnEnter(AppState::Finished), setup)
+        .add_plugins(TextureAtlasPlugin::new(vec![AtlasOptions {
+            folder_path: "sprites/ui".to_string(),
+            padding: None,
+            sampler: Some(ImageSampler::nearest()),
+        }]))
+        .add_systems(OnEnter(AtlasLoadingState::Completed), setup)
         .add_systems(Update, draw_cursor)
         .run();
 }
 
-fn load_textures(mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands.insert_resource(SpriteFolder(asset_server.load_folder(SPRITES_FOLDER_PATH)));
-}
-
-fn check_textures(
-    mut next_state: ResMut<NextState<AppState>>,
-    sprite_folder: Res<SpriteFolder>,
-    mut events: EventReader<AssetEvent<LoadedFolder>>,
-) {
-    for event in events.read() {
-        if event.is_loaded_with_dependencies(&sprite_folder.0) {
-            next_state.set(AppState::Finished);
-        }
-    }
-}
-
 fn setup(
     mut commands: Commands,
-    sprite_handles: Res<SpriteFolder>,
+    texture_atlases: Res<TextureAtlases>,
     asset_server: Res<AssetServer>,
-    mut texture_atlases: ResMut<Assets<TextureAtlasLayout>>,
-    loaded_folders: Res<Assets<LoadedFolder>>,
-    mut textures: ResMut<Assets<Image>>,
     mut windows: Query<&mut Window>,
 ) {
-    let loaded_folder = loaded_folders.get(&sprite_handles.0).unwrap();
+    if let Some(atlas_data) = texture_atlases.0.first() {
+        commands.spawn(Camera2d::default());
 
-    let (texture_atlas_nearest, nearest_sources, nearest_texture) = create_texture_atlas(
-        loaded_folder,
-        None,
-        Some(ImageSampler::nearest()),
-        &mut textures,
-    );
+        let vendor_handle: Handle<Image> =
+            asset_server.get_handle("sprites/ui/ui_0028.png").unwrap();
 
-    let atlas_nearest_handle = texture_atlases.add(texture_atlas_nearest);
-
-    let vendor_handle: Handle<Image> = asset_server.get_handle("sprites/ui/ui_0028.png").unwrap();
-
-    commands.spawn(Camera2d::default());
-
-    commands.spawn((
-        Cursor,
-        Transform {
-            translation: Vec3::new(0.0, 0.0, 0.0),
-            scale: Vec3::splat(2.0),
-            ..default()
-        },
-        Sprite::from_atlas_image(
-            nearest_texture.clone(),
-            nearest_sources
-                .handle(atlas_nearest_handle, &vendor_handle)
-                .unwrap(),
-        ),
-    ));
-
-    commands.spawn((
-        Sprite::from_image(nearest_texture.clone()),
-        Transform {
-            translation: Vec3::new(-250.0, -130.0, 0.0),
-            scale: Vec3::splat(0.8),
-            ..default()
-        },
-    ));
+        if let Some(source) = atlas_data
+            .source_data
+            .handle(atlas_data.atlas_layout.clone(), &mut vendor_handle.clone())
+        {
+            commands.spawn((
+                Cursor,
+                Transform {
+                    translation: Vec3::new(0.0, 0.0, 10.0),
+                    scale: Vec3::splat(2.0),
+                    ..default()
+                },
+                Sprite::from_atlas_image(atlas_data.atlas_texture.clone(), source),
+            ));
+        }
+    }
 
     if let Ok(mut window) = windows.get_single_mut() {
         window.cursor_options.visible = false;
     }
-}
-
-fn create_texture_atlas(
-    folder: &LoadedFolder,
-    padding: Option<UVec2>,
-    sampling: Option<ImageSampler>,
-    textures: &mut ResMut<Assets<Image>>,
-) -> (TextureAtlasLayout, TextureAtlasSources, Handle<Image>) {
-    let mut texture_atlas_builder = TextureAtlasBuilder::default();
-    texture_atlas_builder.padding(padding.unwrap_or_default());
-
-    for handle in folder.handles.iter() {
-        let id = handle.id().typed_unchecked::<Image>();
-        let Some(texture) = textures.get(id) else {
-            warn!(
-                "{:?} did not resolve to an `Image` asset.",
-                handle.path().unwrap()
-            );
-            continue;
-        };
-
-        texture_atlas_builder.add_texture(Some(id), texture);
-    }
-
-    let (texture_atlas_layout, texture_atlas_sources, texture) =
-        texture_atlas_builder.build().unwrap();
-    let texture = textures.add(texture);
-
-    let image = textures.get_mut(&texture).unwrap();
-    image.sampler = sampling.unwrap_or_default();
-
-    (texture_atlas_layout, texture_atlas_sources, texture)
 }
 
 fn draw_cursor(

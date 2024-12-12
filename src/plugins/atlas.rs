@@ -8,19 +8,19 @@ pub struct AtlasOptions {
 }
 
 #[derive(Resource)]
-struct LoadedFolders(Vec<Handle<LoadedFolder>>);
+pub struct LoadedFolders(Vec<Handle<LoadedFolder>>);
 
-struct TextureAtlasData {
-    atlas_layout: Handle<TextureAtlasLayout>,
-    atlas_texture: Handle<Image>,
-    source_data: TextureAtlasSources,
+pub struct TextureAtlasData {
+    pub atlas_layout: Handle<TextureAtlasLayout>,
+    pub atlas_texture: Handle<Image>,
+    pub source_data: TextureAtlasSources,
 }
 
 #[derive(Resource)]
-struct TextureAtlases(Vec<TextureAtlasData>);
+pub struct TextureAtlases(pub Vec<TextureAtlasData>);
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, States)]
-enum AtlasLoadingState {
+pub enum AtlasLoadingState {
     #[default]
     Setup,
     Completed,
@@ -77,7 +77,10 @@ fn load_folders(
 ) {
     let folder_handles: Vec<_> = atlas_options
         .iter()
-        .map(|option| asset_server.load_folder(&option.folder_path))
+        .map(|option| {
+            info!("Loading folder: {}", option.folder_path);
+            asset_server.load_folder(&option.folder_path)
+        })
         .collect();
 
     commands.insert_resource(LoadedFolders(folder_handles));
@@ -95,7 +98,7 @@ fn check_folder_loading(
     });
 
     if all_folders_loaded {
-        info!("All folders have been successfully loaded.");
+        info!("All folders successfully loaded.");
         next_state.set(AtlasLoadingState::Completed);
     }
 }
@@ -108,30 +111,38 @@ fn assemble_texture_atlases(
     mut textures: ResMut<Assets<Image>>,
     mut atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
-    let atlases = loaded_folders
+    let atlases: Vec<_> = loaded_folders
         .0
         .iter()
         .zip(atlas_options.iter())
         .filter_map(|(folder_handle, options)| {
             let folder = folder_assets.get(folder_handle)?;
-
-            create_texture_atlas(
+            match create_texture_atlas(
                 folder,
                 options.padding,
                 options.sampler.clone(),
                 &mut textures,
-            )
-            .map(|(layout, sources, texture)| {
-                let layout_handle = atlas_layouts.add(layout);
-                TextureAtlasData {
-                    atlas_layout: layout_handle,
-                    atlas_texture: texture,
-                    source_data: sources,
+            ) {
+                Some((layout, sources, texture)) => {
+                    let layout_handle = atlas_layouts.add(layout);
+                    Some(TextureAtlasData {
+                        atlas_layout: layout_handle,
+                        atlas_texture: texture,
+                        source_data: sources,
+                    })
                 }
-            })
+                None => {
+                    warn!(
+                        "Failed to create texture atlas for folder: {}",
+                        options.folder_path
+                    );
+                    None
+                }
+            }
         })
         .collect();
 
+    info!("Successfully assembled {} texture atlases.", atlases.len());
     commands.insert_resource(TextureAtlases(atlases));
 }
 
@@ -146,14 +157,15 @@ fn create_texture_atlas(
 
     for handle in &folder.handles {
         let texture_id = handle.id().typed_unchecked::<Image>();
-        let texture = textures.get(texture_id)?;
-
-        atlas_builder.add_texture(Some(texture_id), texture);
+        if let Some(texture) = textures.get(texture_id) {
+            atlas_builder.add_texture(Some(texture_id), texture);
+        } else {
+            warn!("Texture not found for handle: {:?}", texture_id);
+        }
     }
 
     atlas_builder
         .build()
-        .ok()
         .map(|(layout, sources, atlas_texture)| {
             let texture_handle = textures.add(atlas_texture);
 
@@ -163,4 +175,9 @@ fn create_texture_atlas(
 
             (layout, sources, texture_handle)
         })
+        .map_err(|e| {
+            error!("Error building texture atlas: {:?}", e);
+            e
+        })
+        .ok()
 }
