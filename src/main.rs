@@ -1,5 +1,7 @@
 use bevy::{asset::LoadedFolder, image::ImageSampler, prelude::*};
 
+mod plugins;
+
 const SPRITES_FOLDER_PATH: &str = "sprites/ui";
 
 #[derive(Resource, Default)]
