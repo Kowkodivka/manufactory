@@ -8,26 +8,46 @@ struct Cursor;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
-        .add_plugins(TextureAtlasPlugin::new(vec![AtlasOptions {
-            folder_path: "sprites/ui".to_string(),
-            padding: None,
-            sampler: Some(ImageSampler::nearest()),
-        }]))
-        .add_systems(OnEnter(AtlasLoadingState::Completed), setup)
-        .add_systems(Update, draw_cursor)
+        .add_plugins(
+            DefaultPlugins
+                .set(ImagePlugin::default_nearest())
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: String::from("Manufactory"),
+                        ..Default::default()
+                    }),
+                    ..default()
+                }),
+        )
+        .add_plugins(TextureAtlasPlugin::new(vec![
+            AtlasOptions::new(
+                "sprites/ui".to_string(),
+                None,
+                Some(ImageSampler::nearest()),
+            ),
+            // AtlasOptions::new(
+            //     "sprites/environment".to_string(),
+            //     None,
+            //     Some(ImageSampler::nearest()),
+            // ),
+        ]))
+        .add_systems(OnEnter(AtlasLoadingState::Completed), spawn_camera)
+        .add_systems(OnEnter(AtlasLoadingState::Completed), spawn_cursor)
+        .add_systems(Update, update_cursor)
         .run();
 }
 
-fn setup(
+fn spawn_camera(mut commands: Commands) {
+    commands.spawn(Camera2d::default());
+}
+
+fn spawn_cursor(
     mut commands: Commands,
     texture_atlases: Res<TextureAtlases>,
     asset_server: Res<AssetServer>,
     mut windows: Query<&mut Window>,
 ) {
     if let Some(atlas_data) = texture_atlases.0.first() {
-        commands.spawn(Camera2d::default());
-
         let vendor_handle: Handle<Image> =
             asset_server.get_handle("sprites/ui/ui_0028.png").unwrap();
 
@@ -52,7 +72,7 @@ fn setup(
     }
 }
 
-fn draw_cursor(
+fn update_cursor(
     mut cursors: Query<&mut Transform, With<Cursor>>,
     camera_query: Query<(&Camera, &GlobalTransform)>,
     windows: Query<&Window>,

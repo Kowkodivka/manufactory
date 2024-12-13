@@ -7,6 +7,20 @@ pub struct AtlasOptions {
     pub sampler: Option<ImageSampler>,
 }
 
+impl AtlasOptions {
+    pub fn new(
+        folder_path: String,
+        padding: Option<UVec2>,
+        sampler: Option<ImageSampler>,
+    ) -> AtlasOptions {
+        AtlasOptions {
+            folder_path,
+            padding,
+            sampler,
+        }
+    }
+}
+
 #[derive(Resource)]
 pub struct LoadedFolders(Vec<Handle<LoadedFolder>>);
 
